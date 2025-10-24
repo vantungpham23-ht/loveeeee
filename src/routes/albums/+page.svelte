@@ -118,7 +118,6 @@
 				showCreateDialog = false;
 				newAlbumTitle = '';
 				newAlbumDescription = '';
-				error = '';
 			}
 		} catch (err) {
 			console.error('Create error:', err);
@@ -156,106 +155,113 @@
 	</div>
 {:else}
 	<!-- Main Albums Content -->
-<div class="container mx-auto px-4 py-8">
-	<div class="flex justify-between items-center mb-8">
-		<h1 class="text-3xl font-bold text-pink-600">📚 Albums</h1>
-		<button 
-			on:click={() => showCreateDialog = true}
-			class="btn-primary"
-		>
-			Create Album
-		</button>
-	</div>
-	
-	{#if loading}
-		<div class="flex justify-center items-center py-12">
-			<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500"></div>
-			<span class="ml-3 text-gray-600">Loading albums...</span>
-		</div>
-	{:else if error}
-		<div class="text-center py-12">
-			<div class="text-6xl mb-4">⚠️</div>
-			<h2 class="text-2xl font-semibold text-gray-700 mb-2">Error</h2>
-			<p class="text-red-600 mb-4">{error}</p>
-			<button 
-				on:click={loadAlbums}
-				class="btn-primary"
-			>
-				Retry
-			</button>
-		</div>
-	{:else if albums.length === 0}
-		<div class="text-center py-12">
-			<div class="text-6xl mb-4">📸</div>
-			<h2 class="text-2xl font-semibold text-gray-700 mb-2">No albums yet</h2>
-			<p class="text-gray-500 mb-6">Create your first album to get started!</p>
+	<div class="container mx-auto px-4 py-8">
+		<div class="flex justify-between items-center mb-8">
+			<h1 class="text-3xl font-bold text-pink-600">📚 Albums</h1>
 			<button 
 				on:click={() => showCreateDialog = true}
 				class="btn-primary"
 			>
-				Create Your First Album
+				Create Album
 			</button>
 		</div>
-	{:else}
-		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-			{#each albums as album}
-				<a href="/albums/{album.id}" class="block">
-					<div class="card hover:shadow-lg transition-shadow duration-200">
-						<h3 class="text-xl font-semibold text-gray-800 mb-2">{album.title}</h3>
-						{#if album.description}
-							<p class="text-gray-600 text-sm">{album.description}</p>
-						{/if}
-						<p class="text-xs text-gray-500 mt-2">Created: {new Date(album.created_at).toLocaleDateString()}</p>
+		
+		{#if loading}
+			<div class="flex justify-center items-center py-12">
+				<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500"></div>
+				<span class="ml-3 text-gray-600">Loading albums...</span>
+			</div>
+		{:else if error}
+			<div class="text-center py-12">
+				<div class="text-6xl mb-4">⚠️</div>
+				<h2 class="text-2xl font-semibold text-gray-700 mb-2">Error</h2>
+				<p class="text-red-600 mb-4">{error}</p>
+				<button
+					on:click={loadAlbums}
+					class="btn-primary"
+				>
+					Retry
+				</button>
+			</div>
+		{:else if albums.length === 0}
+			<div class="text-center py-12">
+				<div class="text-6xl mb-4">✨</div>
+				<h2 class="text-2xl font-semibold text-gray-700 mb-2">No albums yet!</h2>
+				<p class="text-gray-500 mb-6">Start by creating your first album.</p>
+				<button
+					on:click={() => showCreateDialog = true}
+					class="btn-primary"
+				>
+					Create First Album
+				</button>
+			</div>
+		{:else}
+			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+				{#each albums as album (album.id)}
+					<a href="/albums/{album.id}" class="block bg-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow duration-200 overflow-hidden group">
+						<div class="relative h-48 bg-gradient-to-br from-pink-100 to-purple-100 flex items-center justify-center">
+							{#if album.cover_url}
+								<img src={album.cover_url} alt={album.title} class="w-full h-full object-cover absolute inset-0 group-hover:scale-105 transition-transform duration-300" />
+							{:else}
+								<div class="text-6xl text-pink-400">📚</div>
+							{/if}
+							<div class="absolute inset-0 bg-black bg-opacity-20 group-hover:bg-opacity-30 transition-opacity duration-200"></div>
+							<h3 class="relative z-10 text-white text-2xl font-bold text-shadow-md">{album.title}</h3>
+						</div>
+						<div class="p-4">
+							<p class="text-gray-600 text-sm mb-2">{album.description || 'No description'}</p>
+							<p class="text-gray-500 text-xs">Created: {new Date(album.created_at).toLocaleDateString()}</p>
+						</div>
+					</a>
+				{/each}
+			</div>
+		{/if}
+	</div>
+
+	{#if showCreateDialog}
+		<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+			<div class="bg-white rounded-3xl p-8 shadow-2xl max-w-md w-full">
+				<h2 class="text-2xl font-bold text-pink-600 mb-6 text-center">Create New Album</h2>
+				<form on:submit|preventDefault={createAlbum} class="space-y-4">
+					<div>
+						<label class="block text-sm font-medium text-gray-700 mb-2">Title</label>
+						<input
+							bind:value={newAlbumTitle}
+							type="text"
+							placeholder="e.g., Our First Year"
+							required
+							class="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:border-pink-300 focus:ring-2 focus:ring-pink-100 transition-colors duration-200"
+						/>
 					</div>
-				</a>
-			{/each}
+
+					<div>
+						<label class="block text-sm font-medium text-gray-700 mb-2">Description (optional)</label>
+						<input
+							bind:value={newAlbumDescription}
+							type="text"
+							placeholder="A brief description of this album"
+							class="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:border-pink-300 focus:ring-2 focus:ring-pink-100 transition-colors duration-200"
+						/>
+					</div>
+
+					<div class="flex justify-end space-x-4 mt-6">
+						<button
+							type="button"
+							on:click={() => showCreateDialog = false}
+							class="px-6 py-3 bg-gray-200 text-gray-700 rounded-2xl hover:bg-gray-300 transition-colors duration-200 font-medium"
+						>
+							Cancel
+						</button>
+						<button
+							type="submit"
+							disabled={creating}
+							class="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white px-6 py-3 rounded-2xl font-medium transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-50"
+						>
+							{creating ? 'Creating...' : 'Create Album'}
+						</button>
+					</div>
+				</form>
+			</div>
 		</div>
 	{/if}
-</div>
-
-<!-- Create Album Dialog -->
-{#if showCreateDialog}
-	<div class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-		<div class="bg-white rounded-2xl p-6 w-full max-w-md">
-			<h2 class="text-2xl font-bold text-gray-800 mb-4">Create New Album</h2>
-			
-			<div class="space-y-4">
-				<div>
-					<label class="block text-sm font-medium text-gray-700 mb-2">Title</label>
-					<input
-						bind:value={newAlbumTitle}
-						placeholder="Enter album title"
-						type="text"
-						class="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:border-pink-300 focus:ring-2 focus:ring-pink-100 transition-colors duration-200"
-					/>
-				</div>
-				
-				<div>
-					<label class="block text-sm font-medium text-gray-700 mb-2">Description (optional)</label>
-					<input
-						bind:value={newAlbumDescription}
-						placeholder="Enter album description"
-						type="text"
-						class="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:border-pink-300 focus:ring-2 focus:ring-pink-100 transition-colors duration-200"
-					/>
-				</div>
-			</div>
-			
-			<div class="flex gap-3 mt-6">
-				<button
-					on:click={() => showCreateDialog = false}
-					class="flex-1 px-4 py-2 border border-gray-200 bg-white hover:bg-gray-50 rounded-2xl transition-colors duration-200"
-				>
-					Cancel
-				</button>
-				<button
-					on:click={createAlbum}
-					disabled={creating || !newAlbumTitle.trim()}
-					class="flex-1 btn-primary disabled:opacity-50"
-				>
-					{creating ? 'Creating...' : 'Create'}
-				</button>
-			</div>
-		</div>
-	</div>
 {/if}
