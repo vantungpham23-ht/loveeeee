@@ -1,0 +1,37 @@
+{
+	"/": [
+		"src/routes/+layout.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/albums": [
+		"src/routes/+layout.server.ts"
+	],
+	"/albums/[id]": [
+		"src/routes/+layout.server.ts"
+	],
+	"/api/upload-avatar": [
+		"src/routes/api/upload-avatar/+server.ts"
+	],
+	"/api/upload": [
+		"src/routes/api/upload/+server.ts"
+	],
+	"/auth": [
+		"src/routes/+layout.server.ts"
+	],
+	"/auth/callback": [
+		"src/routes/auth/callback/+page.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/profile": [
+		"src/routes/+layout.server.ts"
+	],
+	"/settings": [
+		"src/routes/+layout.server.ts"
+	],
+	"/test": [
+		"src/routes/+layout.server.ts"
+	],
+	"/upload": [
+		"src/routes/+layout.server.ts"
+	]
+}
