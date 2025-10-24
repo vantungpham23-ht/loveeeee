@@ -1,4 +1,5 @@
 import { supabase } from './supabase/client';
+import { getCoupleStatus } from './couple';
 
 export async function uploadFile(file: File, albumId: string, caption?: string) {
 	const formData = new FormData();
@@ -21,9 +22,16 @@ export async function uploadFile(file: File, albumId: string, caption?: string) 
 }
 
 export async function getAlbums() {
+	const coupleStatus = await getCoupleStatus();
+	
+	if (!coupleStatus?.isActive || !coupleStatus?.couple?.id) {
+		return [];
+	}
+	
 	const { data, error } = await supabase
 		.from('albums')
 		.select('*')
+		.eq('couple_id', coupleStatus.couple.id)
 		.order('created_at', { ascending: false });
 
 	if (error) throw error;
@@ -31,10 +39,17 @@ export async function getAlbums() {
 }
 
 export async function getMemories(albumId: string) {
+	const coupleStatus = await getCoupleStatus();
+	
+	if (!coupleStatus?.isActive || !coupleStatus?.couple?.id) {
+		return [];
+	}
+	
 	const { data, error } = await supabase
 		.from('memories')
 		.select('*')
 		.eq('album_id', albumId)
+		.eq('couple_id', coupleStatus.couple.id)
 		.order('created_at', { ascending: false });
 
 	if (error) throw error;
@@ -42,9 +57,19 @@ export async function getMemories(albumId: string) {
 }
 
 export async function createAlbum(title: string, description?: string) {
+	const coupleStatus = await getCoupleStatus();
+	
+	if (!coupleStatus?.isActive || !coupleStatus?.couple?.id) {
+		throw new Error('No active couple');
+	}
+	
 	const { data, error } = await supabase
 		.from('albums')
-		.insert({ title, description })
+		.insert({ 
+			title, 
+			description,
+			couple_id: coupleStatus.couple.id
+		})
 		.select()
 		.single();
 

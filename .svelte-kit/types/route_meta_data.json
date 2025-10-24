@@ -22,6 +22,9 @@
 		"src/routes/auth/callback/+page.ts",
 		"src/routes/+layout.server.ts"
 	],
+	"/couple": [
+		"src/routes/+layout.server.ts"
+	],
 	"/profile": [
 		"src/routes/+layout.server.ts"
 	],

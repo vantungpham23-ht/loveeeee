@@ -5,6 +5,7 @@
 	import relativeTime from 'dayjs/plugin/relativeTime';
 	import LoveTimer from '../components/LoveTimer.svelte';
 	import { supabase } from '$lib/supabase/client';
+	import { getCoupleStatus } from '$lib/couple';
 	
 	dayjs.extend(relativeTime);
 	
@@ -13,6 +14,7 @@
 	let loading = true;
 	let authLoading = true;
 	let user: any = null;
+	let coupleStatus: any = null;
 	
 	onMount(async () => {
 		// Check authentication first
@@ -35,11 +37,16 @@
 		// Load memories from Supabase
 		loadMemoriesFromSupabase();
 		
-		// Set up real-time subscription
+		// Set up real-time subscription for couple memories
 		const channel = supabase
 			.channel('memories_changes')
 			.on('postgres_changes', 
-				{ event: '*', schema: 'public', table: 'memories' },
+				{ 
+					event: '*', 
+					schema: 'public', 
+					table: 'memories',
+					filter: `couple_id=eq.${coupleStatus.couple.id}`
+				},
 				() => {
 					loadMemoriesFromSupabase();
 				}
@@ -81,6 +88,22 @@
 			
 			user = session.user;
 			console.log('User authenticated:', user.email);
+			
+			// Check couple status
+			coupleStatus = await getCoupleStatus();
+			
+			// If no couple or couple is pending, redirect to couple setup
+			if (!coupleStatus?.hasCouple || coupleStatus?.isPending) {
+				goto('/couple');
+				return;
+			}
+			
+			// If couple is not active, redirect to couple setup
+			if (!coupleStatus?.isActive) {
+				goto('/couple');
+				return;
+			}
+			
 		} catch (err) {
 			console.error('Authentication check failed:', err);
 			redirectToLogin();
@@ -99,7 +122,14 @@
 			
 			console.log('Loading from Supabase...');
 			
-			// Get memories directly from memories table
+			// Only load memories if we have an active couple
+			if (!coupleStatus?.isActive || !coupleStatus?.couple?.id) {
+				console.log('No active couple, skipping memory load');
+				memories = [];
+				return;
+			}
+			
+			// Get memories directly from memories table filtered by couple_id
 			const { data: memoriesData, error: memoriesError } = await supabase
 				.from('memories')
 				.select(`
@@ -113,6 +143,7 @@
 						description
 					)
 				`)
+				.eq('couple_id', coupleStatus.couple.id)
 				.order('created_at', { ascending: false });
 			
 			console.log('Supabase memories response:', { memoriesData, memoriesError });

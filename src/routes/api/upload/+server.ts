@@ -26,10 +26,23 @@ export const POST: RequestHandler = async ({ request }) => {
 			return new Response(uploadError.message, { status: 500 });
 		}
 
+		// Get album to get couple_id
+		const { data: albumData, error: albumError } = await supabaseAdmin
+			.from('albums')
+			.select('couple_id')
+			.eq('id', album)
+			.single();
+
+		if (albumError) {
+			console.error('Album error:', albumError);
+			return new Response(albumError.message, { status: 500 });
+		}
+
 		const { error: insertError } = await supabaseAdmin
 			.from('memories')
 			.insert({
 				album_id: album,
+				couple_id: albumData.couple_id,
 				media_url: path,
 				caption
 			});
