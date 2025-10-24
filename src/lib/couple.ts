@@ -83,6 +83,7 @@ export async function createCouple(coupleName?: string, startDate?: string): Pro
 		}
 
 		const inviteCode = generateInviteCode();
+		console.log('Creating couple with invite code:', inviteCode);
 		
 		const { data, error } = await supabase
 			.from('couples')
@@ -95,6 +96,8 @@ export async function createCouple(coupleName?: string, startDate?: string): Pro
 			})
 			.select()
 			.single();
+
+		console.log('Couple creation result:', { data, error });
 
 		if (error) throw error;
 
@@ -119,13 +122,16 @@ export async function joinCouple(inviteCode: string): Promise<Couple | null> {
 			throw new Error('User already has a couple');
 		}
 
-		// Find couple by invite code
+		// Find couple by invite code (case insensitive)
+		console.log('Searching for invite code:', inviteCode);
 		const { data: couple, error: findError } = await supabase
 			.from('couples')
 			.select('*')
-			.eq('invite_code', inviteCode)
+			.ilike('invite_code', inviteCode)
 			.eq('status', 'pending')
 			.single();
+
+		console.log('Couple search result:', { couple, findError });
 
 		if (findError) {
 			if (findError.code === 'PGRST116') {

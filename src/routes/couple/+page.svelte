@@ -68,8 +68,15 @@
 				coupleName = '';
 				startDate = '';
 				
-				// Refresh couple status
+				// Refresh couple status and redirect if active
 				await checkCoupleStatus();
+				
+				// If couple is now active, redirect to home
+				if (coupleStatus?.isActive) {
+					setTimeout(() => {
+						goto('/');
+					}, 3000);
+				}
 			}
 		} catch (err: any) {
 			error = err.message || 'Failed to create couple';
@@ -89,7 +96,7 @@
 			error = '';
 			success = '';
 			
-			const couple = await joinCouple(inviteCode.trim().toUpperCase());
+			const couple = await joinCouple(inviteCode.trim());
 			
 			if (couple) {
 				success = 'Successfully joined the couple! Redirecting to timeline...';
