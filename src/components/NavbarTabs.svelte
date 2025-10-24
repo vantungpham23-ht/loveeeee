@@ -2,8 +2,10 @@
 	import { page } from '$app/stores';
 	
 	$: currentPath = $page.url.pathname;
+	$: hideNav = currentPath.startsWith('/auth') || currentPath.startsWith('/couple');
 </script>
 
+{#if !hideNav}
 <nav class="fixed bottom-0 inset-x-0 bg-gradient-to-t from-white/98 to-white/95 backdrop-blur-xl border-t border-rose-200/50 flex justify-around py-2 z-50 shadow-lg">
 	<a 
 		href="/" 
@@ -38,3 +40,4 @@
 		<span class="font-medium">Cài Đặt</span>
 	</a>
 </nav>
+{/if}

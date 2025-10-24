@@ -25,6 +25,42 @@
 		}
 		
 		await loadAlbums();
+		
+		// Set up real-time subscription for album updates
+		if (coupleStatus?.couple?.id) {
+			const channel = supabase
+				.channel('albums_changes')
+				.on('postgres_changes', 
+					{ 
+						event: '*', 
+						schema: 'public', 
+						table: 'albums',
+						filter: `couple_id=eq.${coupleStatus.couple.id}`
+					},
+					() => {
+						console.log('Albums changed, reloading...');
+						loadAlbums();
+					}
+				)
+				.on('postgres_changes', 
+					{ 
+						event: '*', 
+						schema: 'public', 
+						table: 'memories',
+						filter: `couple_id=eq.${coupleStatus.couple.id}`
+					},
+					() => {
+						console.log('Memories changed, reloading albums...');
+						loadAlbums();
+					}
+				)
+				.subscribe();
+			
+			// Cleanup subscription on component destroy
+			return () => {
+				supabase.removeChannel(channel);
+			};
+		}
 	});
 	
 	async function checkAuthentication() {
@@ -84,7 +120,43 @@
 				error = `Database Error: ${testError.message}`;
 			} else {
 				console.log('Success! Albums:', data);
-				albums = data || [];
+				
+				// Load latest image for each album
+				const albumsWithImages = await Promise.all(
+					(data || []).map(async (album) => {
+						// Get latest memory for this album (without .single() to avoid 406 error)
+						const { data: memories } = await supabase
+							.from('memories')
+							.select('media_url, created_at')
+							.eq('album_id', album.id)
+							.order('created_at', { ascending: false })
+							.limit(1);
+						
+						const latestMemory = memories?.[0] || null;
+						
+						// Get proper image URL from Supabase Storage
+						let imageUrl = null;
+						if (latestMemory?.media_url) {
+							const { data: imageData } = supabase
+								.storage
+								.from('memories')
+								.getPublicUrl(latestMemory.media_url);
+							imageUrl = imageData.publicUrl;
+							console.log(`Album ${album.title} - Original: ${latestMemory.media_url}, Public URL: ${imageUrl}`);
+						} else {
+							console.log(`Album ${album.title} - No memories found`);
+						}
+						
+						return {
+							...album,
+							cover_url: imageUrl,
+							latest_image_date: latestMemory?.created_at || null
+						};
+					})
+				);
+				
+				albums = albumsWithImages;
+				console.log('Processed albums with images:', albums);
 			}
 		} catch (err) {
 			console.error('Connection error:', err);
@@ -201,12 +273,39 @@
 					<a href="/albums/{album.id}" class="block bg-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow duration-200 overflow-hidden group">
 						<div class="relative h-48 bg-gradient-to-br from-pink-100 to-purple-100 flex items-center justify-center">
 							{#if album.cover_url}
-								<img src={album.cover_url} alt={album.title} class="w-full h-full object-cover absolute inset-0 group-hover:scale-105 transition-transform duration-300" />
+								<img 
+									src={album.cover_url} 
+									alt={album.title} 
+									class="w-full h-full object-cover absolute inset-0 group-hover:scale-105 transition-transform duration-300" 
+									loading="lazy"
+									on:error={(e) => {
+										console.log('Album cover failed to load:', album.cover_url);
+										const target = e.target;
+										if (target instanceof HTMLImageElement) {
+											target.style.display = 'none';
+											const parent = target.parentElement;
+											if (parent) {
+												const fallback = parent.querySelector('.fallback-icon');
+												if (fallback) {
+													(fallback as HTMLElement).style.display = 'flex';
+												}
+											}
+										}
+									}}
+								/>
+								<div class="fallback-icon absolute inset-0 flex items-center justify-center text-6xl text-pink-400" style="display: none;">
+									📚
+								</div>
 							{:else}
 								<div class="text-6xl text-pink-400">📚</div>
 							{/if}
 							<div class="absolute inset-0 bg-black bg-opacity-20 group-hover:bg-opacity-30 transition-opacity duration-200"></div>
 							<h3 class="relative z-10 text-white text-2xl font-bold text-shadow-md">{album.title}</h3>
+							{#if album.latest_image_date}
+								<div class="absolute top-2 right-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded-full">
+									Latest: {new Date(album.latest_image_date).toLocaleDateString()}
+								</div>
+							{/if}
 						</div>
 						<div class="p-4">
 							<p class="text-gray-600 text-sm mb-2">{album.description || 'No description'}</p>

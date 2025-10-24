@@ -43,18 +43,32 @@ export async function getCurrentCouple(): Promise<CoupleWithUsers | null> {
 		const { data: { user } } = await supabase.auth.getUser();
 		if (!user) return null;
 
-		const { data, error } = await supabase
+		// Try to find couple where user is user1 (without .single() to avoid 406 error)
+		let { data: couples, error } = await supabase
 			.from('couples')
 			.select('*')
-			.or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
-			.single();
+			.eq('user1_id', user.id);
+
+		let data = couples?.[0] || null;
+
+		// If not found as user1, try as user2
+		if (!data) {
+			const { data: couples2, error: error2 } = await supabase
+				.from('couples')
+				.select('*')
+				.eq('user2_id', user.id);
+			
+			data = couples2?.[0] || null;
+			error = error2;
+		}
 
 		if (error) {
-			if (error.code === 'PGRST116') {
-				// No couple found
-				return null;
-			}
 			throw error;
+		}
+
+		if (!data) {
+			// No couple found
+			return null;
 		}
 
 		return data as CoupleWithUsers;
@@ -119,22 +133,45 @@ export async function joinCouple(inviteCode: string): Promise<Couple | null> {
 			throw new Error('User already has a couple');
 		}
 
+		// Debug: Check all couples in database
+		console.log('Debug: Checking all couples in database...');
+		const { data: allCouples, error: allCouplesError } = await supabase
+			.from('couples')
+			.select('*');
+		console.log('All couples:', { allCouples, allCouplesError });
+
 		// Find couple by invite code (case insensitive)
 		console.log('Searching for invite code:', inviteCode);
-		const { data: couple, error: findError } = await supabase
+		
+		// Try exact match first (without .single() to avoid 406 error)
+		let { data: couples, error: findError } = await supabase
 			.from('couples')
 			.select('*')
-			.ilike('invite_code', inviteCode)
-			.eq('status', 'pending')
-			.single();
+			.eq('invite_code', inviteCode)
+			.eq('status', 'pending');
+
+		let couple = couples?.[0] || null;
+
+		// If not found, try case insensitive
+		if (!couple) {
+			const { data: data2, error: error2 } = await supabase
+				.from('couples')
+				.select('*')
+				.ilike('invite_code', inviteCode)
+				.eq('status', 'pending');
+			
+			couple = data2?.[0] || null;
+			findError = error2;
+		}
 
 		console.log('Couple search result:', { couple, findError });
 
 		if (findError) {
-			if (findError.code === 'PGRST116') {
-				throw new Error('Invalid invite code');
-			}
 			throw findError;
+		}
+
+		if (!couple) {
+			throw new Error('Invalid invite code');
 		}
 
 		// Check if user is trying to join their own couple

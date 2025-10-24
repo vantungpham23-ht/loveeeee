@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { supabase } from '$lib/supabase/client';
+	import { onMount } from 'svelte';
+	import { getCurrentCouple } from '$lib/couple';
 	
+	let user: any = null;
 	let coupleInfo = {
 		partner1: '',
 		partner2: '',
@@ -13,15 +16,59 @@
 	let saving = false;
 	let uploading = false;
 	
-	// Load from localStorage on mount
-	if (typeof window !== 'undefined') {
-		const saved = localStorage.getItem('coupleInfo');
-		if (saved) {
-			coupleInfo = { ...coupleInfo, ...JSON.parse(saved) };
+	onMount(async () => {
+		// Get current user
+		const { data: { session } } = await supabase.auth.getSession();
+		user = session?.user;
+		console.log('Settings page - User:', user?.email);
+		
+		// Load couple info from database
+		await loadCoupleInfo();
+		
+		// Set up real-time subscription for couple updates
+		const couple = await getCurrentCouple();
+		if (couple) {
+			const channel = supabase
+				.channel('couple_updates')
+				.on('postgres_changes', 
+					{ 
+						event: 'UPDATE', 
+						schema: 'public', 
+						table: 'couples',
+						filter: `id=eq.${couple.id}`
+					},
+					(payload) => {
+						console.log('Couple updated:', payload);
+						// Reload couple info when updated
+						loadCoupleInfo();
+					}
+				)
+				.subscribe();
+			
+			// Cleanup subscription on component destroy
+			return () => {
+				supabase.removeChannel(channel);
+			};
+		}
+	});
+	
+	async function loadCoupleInfo() {
+		const couple = await getCurrentCouple();
+		if (couple) {
+			coupleInfo = {
+				partner1: couple.partner1_name || '',
+				partner2: couple.partner2_name || '',
+				startDate: couple.start_date || '',
+				avatar1: couple.avatar1 || '',
+				avatar2: couple.avatar2 || ''
+			};
 			avatar1Preview = coupleInfo.avatar1;
 			avatar2Preview = coupleInfo.avatar2;
+			console.log('Loaded couple info from database:', coupleInfo);
 		}
 	}
+	
+	// Remove localStorage loading - now using database
 	
 	async function handleAvatar1Select(event: Event) {
 		const target = event.target as HTMLInputElement;
@@ -87,15 +134,88 @@
 		}
 	}
 	
-	function saveCoupleInfo() {
-		if (typeof window !== 'undefined') {
-			localStorage.setItem('coupleInfo', JSON.stringify(coupleInfo));
-		}
+	async function saveCoupleInfo() {
 		saving = true;
-		setTimeout(() => {
+		try {
+			const couple = await getCurrentCouple();
+			if (!couple) {
+				alert('Không tìm thấy couple. Vui lòng thử lại.');
+				return;
+			}
+
+			// Only update fields that exist in database
+			const updateData: any = {
+				start_date: coupleInfo.startDate
+			};
+			
+			// Add optional fields if they exist in database
+			if (coupleInfo.partner1) updateData.partner1_name = coupleInfo.partner1;
+			if (coupleInfo.partner2) updateData.partner2_name = coupleInfo.partner2;
+			if (coupleInfo.avatar1) updateData.avatar1 = coupleInfo.avatar1;
+			if (coupleInfo.avatar2) updateData.avatar2 = coupleInfo.avatar2;
+
+			const { error } = await supabase
+				.from('couples')
+				.update(updateData)
+				.eq('id', couple.id);
+
+			if (error) {
+				console.error('Error saving couple info:', error);
+				alert('Lỗi khi lưu thông tin. Vui lòng thử lại.');
+			} else {
+				console.log('Couple info saved successfully');
+				alert('Đã lưu thông tin thành công!');
+			}
+		} catch (error) {
+			console.error('Error saving couple info:', error);
+			alert('Lỗi khi lưu thông tin. Vui lòng thử lại.');
+		} finally {
 			saving = false;
-			alert('Settings saved successfully!');
-		}, 1000);
+		}
+	}
+	
+	async function deleteAvatar(avatarType: 'avatar1' | 'avatar2') {
+		try {
+			uploading = true;
+			
+			const couple = await getCurrentCouple();
+			if (!couple) {
+				alert('Không tìm thấy couple. Vui lòng thử lại.');
+				return;
+			}
+
+			// Update database to remove avatar
+			const updateData: any = {};
+			updateData[avatarType] = null;
+
+			const { error } = await supabase
+				.from('couples')
+				.update(updateData)
+				.eq('id', couple.id);
+			
+			if (error) {
+				console.error('Error deleting avatar:', error);
+				alert('Lỗi khi xóa ảnh. Vui lòng thử lại.');
+			} else {
+				console.log('Avatar deleted successfully');
+				
+				// Update local state
+				if (avatarType === 'avatar1') {
+					avatar1Preview = '';
+					coupleInfo.avatar1 = '';
+				} else {
+					avatar2Preview = '';
+					coupleInfo.avatar2 = '';
+				}
+				
+				alert('Đã xóa ảnh thành công!');
+			}
+		} catch (error) {
+			console.error('Error deleting avatar:', error);
+			alert('Lỗi khi xóa ảnh. Vui lòng thử lại.');
+		} finally {
+			uploading = false;
+		}
 	}
 	
 	function handleLogout() {
@@ -141,11 +261,11 @@
 					<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 						<div class="bg-white/60 backdrop-blur-sm rounded-2xl p-4 border border-rose-100/50">
 							<label class="block text-sm font-semibold text-gray-700 mb-2">📧 Email</label>
-							<p class="text-gray-600 font-medium">baolytungpham@gmail.com</p>
+							<p class="text-gray-600 font-medium">{user?.email || 'Loading...'}</p>
 						</div>
 						<div class="bg-white/60 backdrop-blur-sm rounded-2xl p-4 border border-rose-100/50">
 							<label class="block text-sm font-semibold text-gray-700 mb-2">📅 Thành viên từ</label>
-							<p class="text-gray-600 font-medium">24/10/2025</p>
+							<p class="text-gray-600 font-medium">{user?.created_at ? new Date(user.created_at).toLocaleDateString('vi-VN') : 'Loading...'}</p>
 						</div>
 					</div>
 				</div>
@@ -195,13 +315,13 @@
 									<div>
 										<p class="text-sm text-gray-600">Ảnh đã tải lên</p>
 										<button
-											on:click={() => {
-												avatar1Preview = '';
-												coupleInfo.avatar1 = '';
+											on:click={async () => {
+												await deleteAvatar('avatar1');
 											}}
 											class="text-xs text-red-600 hover:text-red-700"
+											disabled={uploading}
 										>
-											Xóa
+											{uploading ? 'Đang xóa...' : 'Xóa'}
 										</button>
 									</div>
 								</div>
@@ -233,13 +353,13 @@
 									<div>
 										<p class="text-sm text-gray-600">Ảnh đã tải lên</p>
 										<button
-											on:click={() => {
-												avatar2Preview = '';
-												coupleInfo.avatar2 = '';
+											on:click={async () => {
+												await deleteAvatar('avatar2');
 											}}
 											class="text-xs text-red-600 hover:text-red-700"
+											disabled={uploading}
 										>
-											Xóa
+											{uploading ? 'Đang xóa...' : 'Xóa'}
 										</button>
 									</div>
 								</div>

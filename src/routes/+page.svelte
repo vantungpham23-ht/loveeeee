@@ -10,7 +10,7 @@
 	dayjs.extend(relativeTime);
 	
 	let coupleInfo: any = {};
-	let memories: any[] = [];
+	let albums: any[] = [];
 	let loading = true;
 	let authLoading = true;
 	let user: any = null;
@@ -25,22 +25,39 @@
 			return;
 		}
 		
-		// Load couple info from localStorage
-		const saved = localStorage.getItem('coupleInfo');
-		if (saved) {
-			coupleInfo = JSON.parse(saved);
+		// Load couple info from database
+		if (coupleStatus?.couple) {
+			coupleInfo = {
+				partner1: coupleStatus.couple.partner1_name || 'User 1',
+				partner2: coupleStatus.couple.partner2_name || 'User 2', 
+				startDate: coupleStatus.couple.start_date || '',
+				avatar1: coupleStatus.couple.avatar1 || '',
+				avatar2: coupleStatus.couple.avatar2 || ''
+			};
 		}
 		
 		// Clear localStorage albums to ensure clean state
 		localStorage.removeItem('uploadedAlbums');
 		
-		// Load memories from Supabase
-		loadMemoriesFromSupabase();
+		// Load albums from Supabase
+		loadAlbumsFromSupabase();
 		
-		// Set up real-time subscription for couple memories
+		// Set up real-time subscription for couple albums and memories
 		if (coupleStatus?.couple?.id) {
 			const channel = supabase
-				.channel('memories_changes')
+				.channel('timeline_changes')
+				.on('postgres_changes', 
+					{ 
+						event: '*', 
+						schema: 'public', 
+						table: 'albums',
+						filter: `couple_id=eq.${coupleStatus.couple.id}`
+					},
+					() => {
+						console.log('Albums changed, reloading timeline...');
+						loadAlbumsFromSupabase();
+					}
+				)
 				.on('postgres_changes', 
 					{ 
 						event: '*', 
@@ -49,7 +66,8 @@
 						filter: `couple_id=eq.${coupleStatus.couple.id}`
 					},
 					() => {
-						loadMemoriesFromSupabase();
+						console.log('Memories changed, reloading timeline...');
+						loadAlbumsFromSupabase();
 					}
 				)
 				.subscribe();
@@ -58,10 +76,21 @@
 		// Listen for auth state changes
 		const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
 			if (event === 'SIGNED_OUT' || !session) {
+				// Reset all state when user logs out
 				user = null;
+				coupleStatus = null;
+				coupleInfo = {};
+				albums = [];
+				loading = true;
 				redirectToLogin();
 			} else if (event === 'SIGNED_IN' && session) {
 				user = session.user;
+				console.log('User signed in:', user.email);
+				// Refresh couple status when user signs in
+				getCoupleStatus().then(status => {
+					coupleStatus = status;
+					console.log('Couple status refreshed:', status);
+				});
 			}
 		});
 		
@@ -120,70 +149,72 @@
 		goto('/auth');
 	}
 	
-	async function loadMemoriesFromSupabase() {
+	async function loadAlbumsFromSupabase() {
 		try {
 			loading = true;
 			
-			console.log('Loading from Supabase...');
+			console.log('Loading albums from Supabase...');
 			
-			// Only load memories if we have an active couple
+			// Only load albums if we have an active couple
 			if (!coupleStatus?.isActive || !coupleStatus?.couple?.id) {
-				console.log('No active couple, skipping memory load');
-				memories = [];
+				console.log('No active couple, skipping album load');
+				albums = [];
 				return;
 			}
 			
-			// Get memories directly from memories table filtered by couple_id
-			const { data: memoriesData, error: memoriesError } = await supabase
-				.from('memories')
-				.select(`
-					id,
-					media_url,
-					caption,
-					created_at,
-					albums (
-						id,
-						title,
-						description
-					)
-				`)
+			// Get albums filtered by couple_id
+			const { data: albumsData, error: albumsError } = await supabase
+				.from('albums')
+				.select('*')
 				.eq('couple_id', coupleStatus.couple.id)
 				.order('created_at', { ascending: false });
 			
-			console.log('Supabase memories response:', { memoriesData, memoriesError });
+			console.log('Supabase albums response:', { albumsData, albumsError });
 			
-			if (memoriesError) {
-				console.error('Error loading memories:', memoriesError);
-				// Fallback to localStorage if Supabase fails
-				loadFromLocalStorage();
+			if (albumsError) {
+				console.error('Error loading albums:', albumsError);
+				albums = [];
 				return;
 			}
 			
-			// Transform data for timeline
-			memories = [];
-			console.log('Memories from Supabase:', memoriesData);
-			
-			if (memoriesData && memoriesData.length > 0) {
-				memories = memoriesData.map(memory => ({
-					id: memory.id,
-					media_url: memory.media_url,
-					caption: memory.caption || '',
-					created_at: memory.created_at,
-					albums: { 
-						title: (memory.albums as any)?.title || 'Unknown Album',
-						description: (memory.albums as any)?.description || ''
+			// Load latest image for each album
+			const albumsWithImages = await Promise.all(
+				(albumsData || []).map(async (album) => {
+					// Get latest memory for this album (without .single() to avoid 406 error)
+					const { data: memories } = await supabase
+						.from('memories')
+						.select('media_url, created_at')
+						.eq('album_id', album.id)
+						.order('created_at', { ascending: false })
+						.limit(1);
+					
+					const latestMemory = memories?.[0] || null;
+					
+					// Get proper image URL from Supabase Storage
+					let imageUrl = null;
+					if (latestMemory?.media_url) {
+						const { data: imageData } = supabase
+							.storage
+							.from('memories')
+							.getPublicUrl(latestMemory.media_url);
+						imageUrl = imageData.publicUrl;
+						console.log(`Album ${album.title} - Latest image: ${imageUrl}`);
 					}
-				}));
-			}
+					
+					return {
+						...album,
+						cover_url: imageUrl,
+						latest_image_date: latestMemory?.created_at || null
+					};
+				})
+			);
 			
-			console.log('Memories after processing:', memories);
-			
-			// If no memories from Supabase, keep memories empty (don't fallback to localStorage)
-			// This ensures timeline shows empty state when Supabase has no data
+			albums = albumsWithImages;
+			console.log('Albums after processing:', albums);
 			
 		} catch (error) {
-			console.error('Error loading memories:', error);
-			loadFromLocalStorage();
+			console.error('Error loading albums:', error);
+			albums = [];
 		} finally {
 			loading = false;
 		}
@@ -242,7 +273,7 @@
 	
 	// Function to refresh timeline
 	async function refreshTimeline() {
-		await loadMemoriesFromSupabase();
+		await loadAlbumsFromSupabase();
 	}
 	
 	// Expose refresh function globally
@@ -382,23 +413,22 @@
 					<h3 class="text-xl font-bold text-gray-700 mb-2">Đang tải kỷ niệm...</h3>
 					<p class="text-gray-600">Vui lòng chờ trong giây lát</p>
 				</div>
-			{:else if memories.length > 0}
+			{:else if albums.length > 0}
 				<div class="relative z-10">
-					<!-- Enhanced Timeline Line -->
-					<div class="absolute left-10 top-0 bottom-0 w-2 bg-gradient-to-b from-rose-300 via-pink-400 to-fuchsia-300 rounded-full shadow-lg"></div>
+					<!-- Timeline Line Hidden -->
 					
 					<div class="space-y-10">
-						{#each memories.slice(0, 8) as memory, index}
+						{#each albums.slice(0, 8) as album, index}
 							<div class="relative flex items-start {index % 2 === 0 ? 'flex-row' : 'flex-row-reverse'} group">
 								<!-- Enhanced Timeline Dot -->
 								<div class="relative z-20 flex-shrink-0 w-20 h-20 bg-gradient-to-br from-white to-rose-50 rounded-full border-4 border-rose-300 flex items-center justify-center shadow-2xl group-hover:scale-110 transition-all duration-300">
-									{#if memory.media_url}
+									{#if album.cover_url}
 										<img
-											src={memory.media_url}
-											alt="Kỷ niệm"
+											src={album.cover_url}
+											alt={album.title}
 											class="w-14 h-14 object-cover rounded-full"
 											on:error={(e) => {
-												console.log('Image failed to load:', memory.media_url);
+												console.log('Album cover failed to load:', album.cover_url);
 												const target = e.target;
 												if (target instanceof HTMLImageElement) {
 													target.style.display = 'none';
@@ -417,21 +447,21 @@
 									<div class="absolute -inset-2 bg-gradient-to-r from-rose-400 to-pink-500 rounded-full opacity-0 group-hover:opacity-30 transition-opacity duration-300 blur-sm"></div>
 								</div>
 								
-								<!-- Enhanced Memory Card -->
+								<!-- Enhanced Album Card -->
 								<div class="flex-1 mx-8 {index % 2 === 0 ? 'ml-0' : 'mr-0'} group">
 									<div class="bg-gradient-to-br from-rose-50/80 to-pink-50/80 backdrop-blur-sm rounded-3xl p-6 shadow-xl border border-rose-100/50 group-hover:shadow-2xl group-hover:scale-105 transition-all duration-300 relative overflow-hidden">
 										<!-- Card Background Pattern -->
 										<div class="absolute inset-0 bg-gradient-to-br from-white/30 to-transparent"></div>
 										<div class="relative z-10">
 											<div class="text-center">
-												<h3 class="font-bold text-gray-800 text-lg mb-2">{memory.albums?.title || 'Kỷ niệm'}</h3>
-												<span class="text-sm text-gray-500 bg-white/60 px-3 py-1 rounded-full font-medium block">
-													{dayjs(memory.created_at).format('DD/MM/YYYY')}
+												<h3 class="font-bold text-gray-800 text-lg mb-2">{album.title}</h3>
+												{#if album.description}
+													<p class="text-gray-600 text-sm mb-3">{album.description}</p>
+												{/if}
+												<span class="text-xs text-gray-500 bg-white/60 px-3 py-1 rounded-full font-medium">
+													{dayjs(album.created_at).format('DD/MM/YYYY')}
 												</span>
 											</div>
-											{#if memory.caption}
-												<p class="text-gray-700 text-base leading-relaxed font-medium mt-3 text-center">{memory.caption}</p>
-											{/if}
 										</div>
 									</div>
 								</div>
@@ -439,10 +469,10 @@
 						{/each}
 					</div>
 					
-					{#if memories.length > 8}
+					{#if albums.length > 8}
 						<div class="text-center mt-10">
 							<a href="/albums" class="inline-block bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white px-8 py-3 rounded-2xl font-semibold transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105">
-								Xem Tất Cả Kỷ Niệm 💕
+								Xem Tất Cả Albums ({albums.length})
 							</a>
 						</div>
 					{/if}

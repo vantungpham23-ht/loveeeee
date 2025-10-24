@@ -15,7 +15,13 @@ export async function uploadFile(file: File, albumId: string, caption?: string) 
 	});
 
 	if (!response.ok) {
-		throw new Error('Upload failed');
+		const errorText = await response.text();
+		console.error('Upload failed:', {
+			status: response.status,
+			statusText: response.statusText,
+			error: errorText
+		});
+		throw new Error(`Upload failed: ${response.status} ${response.statusText} - ${errorText}`);
 	}
 
 	return response.json();
