@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import dayjs from 'dayjs';
 	import relativeTime from 'dayjs/plugin/relativeTime';
 	import LoveTimer from '../components/LoveTimer.svelte';
@@ -10,8 +11,18 @@
 	let coupleInfo: any = {};
 	let memories: any[] = [];
 	let loading = true;
+	let authLoading = true;
+	let user: any = null;
 	
-	onMount(() => {
+	onMount(async () => {
+		// Check authentication first
+		await checkAuthentication();
+		
+		// Only proceed if user is authenticated
+		if (!user) {
+			return;
+		}
+		
 		// Load couple info from localStorage
 		const saved = localStorage.getItem('coupleInfo');
 		if (saved) {
@@ -35,11 +46,52 @@
 			)
 			.subscribe();
 		
-		// Cleanup subscription on component destroy
+		// Listen for auth state changes
+		const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+			if (event === 'SIGNED_OUT' || !session) {
+				user = null;
+				redirectToLogin();
+			} else if (event === 'SIGNED_IN' && session) {
+				user = session.user;
+			}
+		});
+		
+		// Cleanup subscriptions on component destroy
 		return () => {
 			supabase.removeChannel(channel);
+			subscription.unsubscribe();
 		};
 	});
+	
+	async function checkAuthentication() {
+		try {
+			authLoading = true;
+			const { data: { session }, error } = await supabase.auth.getSession();
+			
+			if (error) {
+				console.error('Auth error:', error);
+				redirectToLogin();
+				return;
+			}
+			
+			if (!session || !session.user) {
+				redirectToLogin();
+				return;
+			}
+			
+			user = session.user;
+			console.log('User authenticated:', user.email);
+		} catch (err) {
+			console.error('Authentication check failed:', err);
+			redirectToLogin();
+		} finally {
+			authLoading = false;
+		}
+	}
+	
+	function redirectToLogin() {
+		goto('/auth');
+	}
 	
 	async function loadMemoriesFromSupabase() {
 		try {
@@ -172,6 +224,29 @@
 	<meta name="description" content="Lưu giữ những khoảnh khắc đẹp nhất của tình yêu" />
 </svelte:head>
 
+{#if authLoading}
+	<!-- Authentication Loading State -->
+	<div class="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-fuchsia-50 flex items-center justify-center">
+		<div class="text-center">
+			<div class="animate-spin rounded-full h-16 w-16 border-b-2 border-rose-500 mx-auto mb-6"></div>
+			<h2 class="text-2xl font-bold text-gray-700 mb-2">Đang kiểm tra đăng nhập...</h2>
+			<p class="text-gray-600">Vui lòng chờ trong giây lát</p>
+		</div>
+	</div>
+{:else if !user}
+	<!-- Redirect to login - this should not be visible as redirect happens immediately -->
+	<div class="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-fuchsia-50 flex items-center justify-center">
+		<div class="text-center">
+			<div class="text-6xl mb-6">🔒</div>
+			<h2 class="text-2xl font-bold text-gray-700 mb-2">Chưa đăng nhập</h2>
+			<p class="text-gray-600 mb-6">Đang chuyển hướng đến trang đăng nhập...</p>
+			<a href="/auth" class="inline-block bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white px-8 py-3 rounded-2xl font-semibold text-lg transition-all duration-300 shadow-xl hover:shadow-2xl transform hover:scale-105">
+				Đăng Nhập Ngay 💕
+			</a>
+		</div>
+	</div>
+{:else}
+	<!-- Main App Content - Only shown when authenticated -->
 <div class="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-fuchsia-50 pb-24 relative overflow-hidden">
 	<!-- Floating Hearts Animation -->
 	<div class="absolute inset-0 overflow-hidden pointer-events-none">
@@ -355,3 +430,4 @@
 		</div>
 	</div>
 </div>
+{/if}
