@@ -45,11 +45,7 @@ export async function getCurrentCouple(): Promise<CoupleWithUsers | null> {
 
 		const { data, error } = await supabase
 			.from('couples')
-			.select(`
-				*,
-				user1:user1_id(id, email),
-				user2:user2_id(id, email)
-			`)
+			.select('*')
 			.or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
 			.single();
 
@@ -118,6 +114,7 @@ export async function joinCouple(inviteCode: string): Promise<Couple | null> {
 
 		// Check if user already has a couple
 		const existingCouple = await getCurrentCouple();
+		console.log('Existing couple check:', { existingCouple, userId: user.id });
 		if (existingCouple) {
 			throw new Error('User already has a couple');
 		}

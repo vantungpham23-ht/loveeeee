@@ -38,20 +38,22 @@
 		loadMemoriesFromSupabase();
 		
 		// Set up real-time subscription for couple memories
-		const channel = supabase
-			.channel('memories_changes')
-			.on('postgres_changes', 
-				{ 
-					event: '*', 
-					schema: 'public', 
-					table: 'memories',
-					filter: `couple_id=eq.${coupleStatus.couple.id}`
-				},
-				() => {
-					loadMemoriesFromSupabase();
-				}
-			)
-			.subscribe();
+		if (coupleStatus?.couple?.id) {
+			const channel = supabase
+				.channel('memories_changes')
+				.on('postgres_changes', 
+					{ 
+						event: '*', 
+						schema: 'public', 
+						table: 'memories',
+						filter: `couple_id=eq.${coupleStatus.couple.id}`
+					},
+					() => {
+						loadMemoriesFromSupabase();
+					}
+				)
+				.subscribe();
+		}
 		
 		// Listen for auth state changes
 		const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -65,7 +67,9 @@
 		
 		// Cleanup subscriptions on component destroy
 		return () => {
-			supabase.removeChannel(channel);
+			if (coupleStatus?.couple?.id) {
+				supabase.removeChannel(channel);
+			}
 			subscription.unsubscribe();
 		};
 	});
